@@ -1,0 +1,364 @@
+---
+title: "GEM500: Networks and Connectivity"
+author: "Tommaso Trotto, Sarah Smith-Tripp, Jen Baron (tommaso.trotto@ubc.ca)"
+affiliation: "University of British Columbia, Department of Forest Resource Management"
+date: "10/26/2024"
+bibliography: references.bib
+format:
+  html:
+    page-layout: full
+    code-fold: true
+    theme: flatly
+    toc: true
+    toc-float: true
+    toc-location: left
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE)
+
+# tmap interactive view
+tmap::tmap_mode("view")
+```
+
+In this lab we will explore structural and functional connectivity analyses in R. Landscape connectivity is a landscape-level approach to understand how well a landscape might facilitate or impede movement from a given resource patch. It provides a qualitative and quantitative description of how 'nodes' (i.e. resource patches or habitats) are 'linked' to each other. Generally, two nodes that exist within dispersal distances of a target species are considered 'linked.' Remember, dispersal distance is generally connected to organism size, so what might a linked node for an elephant would not be linked for an ant.
+
+# Part 1. Understanding network analysis
+
+
+
+# Part 2. Landscape Metrics
+
+In Part 1, we will use landscape metrics to explore how patch and landscape configuration relate to connectivity. Once again, we are working with the `landscapemetrics` package to extract configuration metrics at the patch, class, and landscape levels, which can later be used to derive information on structural or functional connectivity.
+
+Examples of metrics related to connectivity include:
+
+-   Patch area & patch core area
+-   Perimeter-area ratio & edge density
+-   Largest patch index
+-   Fractal dimension
+-   Patch cohesion index
+
+## National Landcover Data
+
+This lab works with the 2011 National Landcover Data (NLCD) from Augusta, Georgia (@fig-data). This is a subset of a Landsat-based (30m) land cover dataset that covers all of the conterminous United States. Landcover types are classified into 20 unique types ranging from open-water to agricultural areas, 15 of which are included in our dataset (@tbl-covers). [Here is](https://www.mrlc.gov/data/legends/national-land-cover-database-class-legend-and-description) a detailed description of the national land cover dataset we are using.
+
+```{r read}
+#| warning: false
+
+library(tidyverse)
+library(terra)
+library(sf)
+library(FedData)
+library(landscapemetrics)
+library(grainscape)
+library(tmap)
+library(ggplot2)
+library(raster)
+library(igraph)
+
+# load example raster data
+data(augusta_nlcd)
+augusta_nlcd <- unwrap(augusta_nlcd)
+
+check_landscape(augusta_nlcd)  # check input data validity
+```
+
+```{r legend}
+#| tbl-cap: "Table of cover types for the National Landcover Data."
+#| label: tbl-covers
+
+# develop a legend for the dataset 
+legend <- pal_nlcd()
+vals <- unique(augusta_nlcd)
+cover_types <- legend[legend$Class %in% vals[,1], ]
+cover_types
+```
+
+``` {r landscape}
+#| fig-cap: "National Landcover Data from Augusta, Georgia, 2011."
+#| label: fig-data
+
+# visualize dataset
+landscape <- tm_shape(augusta_nlcd) +
+  tm_raster(palette = cover_types$Color,
+            labels = cover_types$Class,
+            style = "pretty",
+            title = "Landscape classes")
+landscape
+```
+
+We will use the `landscapemetrics` package to calculate some metrics we are interested in. Here, we focus on class-level metrics useful for **structural connectivity** assessments. In the code chunk below we use `show_patches` & `show_cores` functions to visualize individual patches and their core area across the landscape (@fig-patches). **Core area** is the area within a patch that is not on the edge of it (i.e. the central parts of a patch). `show_patches` plots all patches on the landscape by cover type, while `show_cores` shows us the core area for all patches.
+
+Note these metrics default to the **8-neighbor rule**. This can be changed by specifying `direction`.
+
+```{r show}
+#| echo: false
+#| fig-cap: "Patches and core area for the current landscape."
+#| label: fig-patches
+#| fig-subcap: true
+#| layout-nrow: 2
+#| layout-ncol: 1
+
+show_patches(augusta_nlcd)$layer_1
+show_cores(augusta_nlcd)$layer_1
+```
+
+Now we will use the `landscapemetrics` package to calculate some metrics describing **structural connectivity** (@fig-metrics). Recall that structural connectivity only uses landcover types and is not specific to an organism or species. For this example, lets compare structural connectivity between deciduous forests, grasslands, and woody wetlands.
+
+We'll compare the following metrics at the class-level:
+
+-   PLAND: Percentage of landscape of class (Area and Edge metric)
+-   NP: Number of patches (Aggregation metric)
+-   CAI_MN: Mean of core area index (Core area metric)
+-   LPI: Largest patch index (Area and Edge metric)
+-   COHESION: Patch Cohesion Index (Aggregation metric)
+
+```{r metrics}
+#| fig-cap: "Values for structural connectivity metrics for the current landscape."
+#| label: fig-metrics
+
+# class-level metrics
+metrics_class <- calculate_lsm(augusta_nlcd,
+                               what = c("lsm_c_pland", "lsm_c_np",
+                                        "lsm_c_cai_mn",
+                                        "lsm_c_lpi", "lsm_c_cohesion"))
+
+# reformat
+metrics_class <- metrics_class %>%
+  filter(class == 41 | class == 71 | class == 90) %>%  # select classes we are interested in
+  mutate(class = recode(class, "41" = "Deciduous Forest",  # rename classes with descriptive labels
+                               "71" = "Grassland",
+                               "90" = "Woody Wetlands"))
+
+# plot
+ggplot(metrics_class, aes(class, value)) +
+  geom_point(aes(size = 3, color = class)) +
+  facet_wrap(~metric, scales = 'free') +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  theme(legend.position = "none") +
+  labs(x = 'Class', y = 'Value')
+```
+
+***Question 1: Using the landscape metrics calculated above, compare the structural connectivity between deciduous forests, grasslands, and woody wetlands on this landscape using 1 bullet point for each. Collectively, briefly describe what they tell you about the structural connectivity of the different classes.***
+
+# Part 3. Network Analysis
+
+In the second part of the lab we will conduct network analysis on the same landscape. To do so, we are going to use the `grainscape` package (@chubaty2020). This is a specialized package built to describe structural and functional connectivity. Note that this package is currently built to handle raster data from the `raster` package, the previous version of the `terra` package. If you would like to explore `grainscape` more, take a look at the two vignettes included on the [Github](https://github.com/achubaty/grainscape/tree/master/vignettes) page.
+
+The `grainscape` package includes two main models:
+
+1.  The first model is based on the **minimum planar graph**. This graph model approximates pairwise connectivity, where nodes are patches and links are **least-cost paths**. Least-cost paths correspond to the shortest & easiest connections between nodes; they represent resistance to movement (i.e. how difficult it is to move through patches). In landscape connectivity modelling these nodes may be habitat patches or protected areas.
+
+2.  The second model, **grains of connectivity**, is useful because it relies less on precise 'links' among nodes, instead describing overall connectivity. Again, using landscape connectivity as an example, these grains can be used for sensitivity analyses of protected area connectivity, or to model highly mobile terrestrial animals, such as ungulates and carnivores, where the habitat patch may be not be a discrete and definable feature but is rather defined probabilistically. For example, grains of connectivity provides continuous coverage of the entire landscape surface in a way that a typical patch-based network does not. It also permits the examination of connectivity at multiple scales, which can accommodate uncertainty in how species may perceive landscape features
+
+<ins>**Modelling with grainscape**</ins>
+
+The input to `grainscape` is a resistance surface, and optionally a second raster describing the focal regions on a raster which will serve as nodes in a network. The resistance surface represents the resistance to the flow of some ecological process of interest, while the nodes are regions where this process originated. A typical application is to model connectivity of landscapes for dispersal of terrestrial animals. Here, the resistance surface models the costs to movement, and the nodes are habitats from which animals may disperse. Many other applications of nodes and resistance surfaces are equally valid and could represent both ecological and non-ecological processes. Note that `grainscape` only accepts continuous raster data.
+
+
+### 3.1 Minimum planar graph
+
+`grainscape` produces networks where links represent paths between patch perimeters. The path between neighbouring patches depends on the values on the resistance surface and, for 2D nodes, the shape and configuration of the patches. The link between two patches may describe the shortest path between any two points on either patch perimeter (i.e. the path distance). However, as the path also depends on neighboring patches, the modeled path may not always be the shortest one.
+
+The **minimum planar graph (MPG)** has typically been constructed using shortest path links between the perimeters of two nodes (patches). In habitat connectivity terms, this implies that landscape structure in the "matrix" between patches is influencing movement, and that the organism in question is on average minimizing its costs when moving through this matrix (an assumption possibly appropriate for terrestrial animals and terrestrial animal-dispersed plants).
+
+Say we are looking at selecting a duck conservation area and want to conduct an analysis to assess current potential connectivity. Remember that ducks like woody wetlands, which are represented by the class code 90, so these are our nodes. To move among nodes, ducks need to cross other classes they may not like as much, for example developed areas or barren land.
+
+To create a **minimum planar graph**, we first reclassify the landscape to represent resistance to movement. For this example, we assign arbitrary resistance values based on how easily we think ducks can move thorough classes. For instance, we assign a value of 1 to class 90 (woody wetlands), which has minimum resistance. Conversely, we assign the highest resistance number (e.g. 10) to the class that is most difficult for ducks to move through - class 31 (barren land). The other classes are assigned values in between 1 and 10 (arbitrary). This represents our **resistance matrix** (@tbl-res).
+
+```{r res_values}
+#| echo: false
+#| tbl-cap: "Resistance matrix for the current landscape."
+#| label: tbl-res
+
+# table of resistance values
+res_values <- c(1, 5, 10)
+res_def <- c("Focal habitat, no resistance to movement", "Harsh habitat, movement is difficult but still possible", "Barrier to movement, complete resistence")
+res_df <- data.frame("Resistance Values" = res_values,
+                     "Definition" = res_def)
+res_df
+```
+
+The following code reclassifies the landscape to represent the resistance matrix (@fig-res).
+
+```{r reclassify}
+#| fig-cap: "Reclassified landscape with resistance values."
+#| label: fig-res
+
+# reclassify the landscape
+original <- c(90, 11, 95, 81, 82, 21, 71, 52, 41, 42, 43, 22, 23, 24, 31)  # these are the original landscape classes
+resistance_levels <- c(1, 2, 2, 2, 3, 3, 3, 5, 5, 5, 6, 6, 8, 9, 10)  # these are arbitrary resistance values for each class
+duck_landscape_preferences <- cbind(original, resistance_levels)
+
+# reclassify the raster using the resistance values
+duck_resistance <- reclassify(raster(augusta_nlcd), rcl = duck_landscape_preferences)
+
+# visualize landscape
+tm_shape(duck_resistance) + 
+  tm_raster(palette = "-viridis", style = "cont", title = "Resistance Values")
+```
+
+With a resistance surface in hand, the next step is to create the MPG. For simplicity we assume that all areas with a resistance value equal to 1 are patches (nodes). However, in many applications patches may have multiple resistance values. A quick way to visualize the MPG is provided by the `plot` method in `grainscape` (@fig-mpg). Gray areas are patches and green lines are links showing the shortest patches between the perimeters of the patches on the resistance surface.
+
+```{r mpg}
+#| fig-cap: "Visualization of least cost paths based on the MPG output."
+#| label: fig-mpg
+
+# Generate and visualize MPG
+duckMPG <- MPG(cost = duck_resistance, patch = duck_resistance == 1)
+plot(duckMPG, quick = "mpgPlot")
+```
+
+Following extraction, the MPG is available as an `igraph` object (see `duckMPG@mpg`) and can be analyzed using any of the functions in this package. A quick way to report on the structure of the graph in tabular format is provided by the function `graphdf()` (@tbl-tabular).
+
+The output shows the structure of the nodes (vertices) and their attributes under the list element v as well as the structure of the graph in the form of an link list (i.e. pair of nodes `e1` and `e2` that are connected) and associated link (edge) attributes under the list element `e`.
+
+```{r table}
+#| tbl-cap: "Tabular view of the MPG output."
+#| label: tbl-tabular
+
+# dataframe of nodes
+nodeTable <- graphdf(duckMPG)[[1]]$v
+head(nodeTable)
+# dataframe of links
+linkTable <- graphdf(duckMPG)[[1]]$e
+head(linkTable)
+```
+
+Based on these dataframes, we can calculate some statistcs of interest, namely mean patch are and mean core area.
+
+```{r means}
+# find the mean patch area and mean patch core area
+# values are number of pixels, so we multiply them by 0.09 to get hectares
+# because the input raster has a 30 x 30 m resolution
+pa <- (mean(igraph::V(duckMPG@mpg)$patchArea) * 0.09) %>% round(0)
+ca <- (mean(igraph::V(duckMPG@mpg)$coreArea) * 0.09) %>% round(0)
+
+print(paste("Mean patch area is", pa, "ha"))
+print(paste("Mean core area is", ca, "ha"))
+```
+
+### 3.2 Link thresholding
+
+A frequent step in the analysis of a network is to threshold it into a series of clusters or components representing connected areas. `grainscape` can threshold the patch network by removing links from the MPG that are greater than or equal to a given path distance. This permits analysis under different assumptions about the maximum effective separation between patches that constitutes a connection.
+
+Multi-threshold comparison provides a sensitivity analysis for connectivity when the maximum is not known. The function `threshold()` provides a way to conduct a scalar analysis at multiple scales. Here we ask for 5 thresholds, and the function finds five approximately evenly-spaced threshold values in link length.
+
+```{r thresholds}
+scalarAnalysis <- threshold(duckMPG, nThresh = 5)
+head(scalarAnalysis$summary)
+```
+
+The summary of this analysis can be plotted to explore scales of aggregation in the landscape. The plot below shows a scalar analysis of this landscape with 100 thresholds, where the response variables is the number of components created by the thresholding. Simply put, if our ducks were able to disperse 100 resistance units (`maxLink`) they would experience this landscape as 37 connected regions (components), as shown in @fig-th. The higher the number of thresholds, the finer the analysis, but the higher the computational cost.
+
+```{r thresholds_plot}
+#| fig-cap: "Illustration of the relationship between link threshold and number of components in the current landscape."
+#| label: fig-th
+
+scalarAnalysis <- threshold(duckMPG, nThresh = 100)
+head(scalarAnalysis$summary)
+
+# plot
+ggplot(scalarAnalysis$summary, aes(x = maxLink, y = nComponents)) +
+  geom_line(colour = "forestgreen", linewidth = 1) +
+  geom_vline(xintercept = 100, col = "darkgrey", linetype = "dashed") +
+  geom_hline(yintercept = 37, col = "darkgrey", linetype = "dashed") +
+  xlab("Link Threshold (resistance units)") +
+  ylab("Number of components") +
+  scale_x_continuous(breaks = seq(0, 600, by = 50)) +
+  theme_bw()
+```
+
+Another thing that we can do is removing links with weights that are greater than a threshold value. This is the most basic approach to scaling a network and the technique upon which **grains of connectivity** is based. Here, we remove links greater than a threshold of 100. This is measured in the units of the resistance surface. Thresholding at this level implies we wish to remove all links that are longer than 100 pixels. The resulting components (clusters) in the network identify groups of nodes that have a minimum level of connectivity among them. For the sake of simplicity, instead of creating a new dataframe with only links equal or shorter than 100 we add transparency when we plot them (@fig-grains).
+
+```{r subset}
+#| fig-cap: "Illustration of link thresholding output for duck."
+#| label: fig-grains
+
+duck_thresh <- ggplot() +
+  geom_raster(data = ggGS(duckMPG, "patchId"),
+            aes(x = x, y = y, fill = value > 0)) +
+  scale_fill_manual(values = "darkgrey") +
+  geom_segment(data = ggGS(duckMPG, "links"),
+               aes(x = x1, y = y1, xend = x2, yend = y2,
+                   alpha = lcpPerimWeight > 100), # specify the threshold distance by modifying lcpPerimWeight > x
+                   linewidth = 1, colour = "forestgreen") +
+  scale_alpha_discrete(range = c(1,0)) + # make values less than the threshold transparent
+  geom_point(data = ggGS(duckMPG, "nodes"),
+             aes(x = x, y = y), colour = "darkgreen") +
+  theme_void() + theme(legend.position="none")
+duck_thresh
+```
+
+***Question 2: How does changing the threshold value change the result? Should studies on organisms with a larger dispersal distance (e.g., grizzly bears) use lower or higher threshold values?***
+
+## 3.3 Grains of connectivity
+
+With the MPG in hand, several additional types of analyses are possible. **Grains of connectivity** (GOC) is an example of using the MPG as if it were a surface of interconnected triangles (aka Voronoi tessellation). In this example we present these in the context of modelling landscape connectivity for highly-mobile organisms (ducks) that are not obligate patch occupants. The function `GOC()` builds GOC models at multiple thresholds. As with `threshold()`, we can specify the number of thresholds we want to create using the `nThresh` parameter.
+
+```{r goc}
+# build the GOC
+duck_connections <- GOC(duckMPG, nThresh = 10) 
+```
+
+Scaling with GOC is done by thresholding the graph to create aggregated patches (components) to delineate a region of the landscape that is connected. As this region grows in size, the area influencing dispersal decreases in proportion (i.e. there are fewer links influencing movement). This can be used to let increases in the threshold coarsen the spatial grain of landscape data, simplifying it in a way that reflects a **functional (potential) connectivity** hypothesis. To get a quick sense of the connected regions described by a GOC model at a given threshold (or scale of movement) we can use the function `grain()`. This example uses the functions plotting mechanism to plot the 1st and 9th threshold in the duckGOC object (@fig-comparison).
+
+```{r compare}
+#| warning: false
+#| fig-cap: "Comparison of GOC models with different threshold values."
+#| label: fig-comparison
+#| fig-subcap: true
+#| layout-ncol: 1
+#| layout-nrow: 2
+
+# plot the highest connectivity using the last threshold bin 
+plot(grain(duck_connections, whichThresh = 9), quick = "grainPlot", theme = FALSE)
+
+# here what it looks like if we plot threshold bin 1 with the lowest connectivity
+plot(grain(duck_connections, whichThresh = 1), quick = "grainPlot", theme = FALSE)
+```
+
+Let's use a conservative grain of connectivity (threshold = 5) to show areas in our landscape that might be important for duck conservation. Here, we plot total core area of different nodes to visualize important patches for duck connectivity (@fig-th5).
+
+```{r th5}
+#| warning: false
+#| fig-cap: "Grains of connectivity for duck in the current landscape."
+#| label: fig-th5
+
+# extract a grain of connectivity from GOC model
+ducks_conservative <- grain(duck_connections, whichThresh = 5) # select the threshold for our analysis
+
+duck_plot <- ggplot() +
+  geom_raster(data = ggGS(ducks_conservative, "vorBound"),
+              aes(x = x, y = y, fill = ifelse(value > 0, "grey", "white"))) +
+  scale_fill_identity() +
+  geom_segment(data = ggGS(ducks_conservative, "links"),
+                aes(x = x1, y = y1, xend = x2, yend = y2), colour = "forestgreen") +
+  geom_point(data = ggGS(ducks_conservative, "nodes"),
+            aes(x = x, y = y, size = totalCoreArea), colour = "darkgreen")
+duck_plot
+```
+
+For some summary statistics, take a look at the values stored in `ducks_conservative@summary`.
+
+# Part 4. Connectivity Comparison
+
+Now it's your turn to conduct a landscape connectivity analysis. You are going to use the same landscape, but tailored for another species - the spotted owl.
+
+Let's first reclassify the landscape, knowing that the spotted owl prefers evergreen and mixed forest (class codes 42 and 43, respectively). These classes will have the lowest resistance (1). Consider Barren land (code 31) to have the highest resistance, so we assign a value of 10. Use the following classification system to reclassify `augusta_nlcd` and run network analysis (minimum planar graph, following by grains of connectivity) for this landscape with 10 threshold (`nThresh`) values; select threshold bin 5 (`whichThresh`). Plot your results for comparison with the ducks' GOC model.
+
+```{r new_res}
+# new landscape classification
+owl_landscape_preferences <- cbind(c(42, 43, 41, 52, 71, 90, 95, 81, 82, 21, 22, 23, 24, 11, 31),
+                                   c(1, 1, 2, 3, 4, 4, 4, 5, 5, 6, 6, 7, 8, 10, 10))
+```
+
+***Question 3: Comparing GOC analysis graphs and total core area for both duck and owl, describe how functional (potential) connectivity differs for these two species.***
+
+***Question 4: Which species (duck vs owl) and what areas would you prioritize for habitat conservation, and why?***
+
+### References
+
+::: {#refs}
+:::
