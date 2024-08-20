@@ -23,13 +23,82 @@ tmap::tmap_mode("view")
 
 In this lab we will explore structural and functional connectivity analyses in R. Landscape connectivity is a landscape-level approach to understand how well a landscape might facilitate or impede movement from a given resource patch. It provides a qualitative and quantitative description of how 'nodes' (i.e. resource patches or habitats) are 'linked' to each other. Generally, two nodes that exist within dispersal distances of a target species are considered 'linked.' Remember, dispersal distance is generally connected to organism size, so what might a linked node for an elephant would not be linked for an ant.
 
-# Part 1. Understanding network analysis
+# Part 1. Understanding network analysis and connectivity
 
+To begin with, let's try clarifying what landscape connectivity and networks mean in ecology. Take for example the simulated landscape in the slider below where each patch represents an habitat where wolves live (**node**). Wolves are very mobile creatures and tend to have large territories. So one would expect wolves to move across patches to delimit their territory. We can simulate the movement of wolves as straight lines (**links**) connecting neighboring patches. This assumption is pretty simple, but lies at the basis of landscape connectivity. Now, imagine that instead of wolves we are dealing with a small mouse population. They don't move as much, therefore we would assume the links to be much shorter. The resulting landscape can then be visualized by dragging the slider to the left. You will also notice how small patches are suitable to host mice and larger patches are suitable for wolves.
+
+``` {r slider}
+#| warning: false
+
+library(tidyverse)
+library(terra)
+library(sf)
+library(FedData)
+library(landscapemetrics)
+library(grainscape)
+library(tmap)
+library(ggplot2)
+library(raster)
+library(igraph)
+library(dplyr)
+library(leaflet)
+library(leafem)
+library(leaflet.extras2)
+
+# import images
+left <- brick('data/sim_land.png')
+crs(left) <- "+proj=lcc +lat_1=48 +lat_2=33 +lon_0=-100 +datum=WGS84"
+right <- brick('data/sim_land_linked.png')
+crs(right) <- "+proj=lcc +lat_1=48 +lat_2=33 +lon_0=-100 +datum=WGS84"
+
+leaflet(width = 600, height = 600) %>%
+  
+  #set up the two map panes
+  addMapPane("right", zIndex = 1) %>%
+  addMapPane("left",  zIndex = 1) %>%
+  addTiles(group = "base",
+           layerId = "baseid1",
+           options = pathOptions(pane = "right")) %>%
+  addTiles(group = "base",
+           layerId = "baseid2",
+           options = pathOptions(pane = "left")) %>%
+  
+  # add images
+  addRasterRGB(x = left, 1, 1, 1,
+               quantiles = c(0.02, 0.98), domain = NULL,
+               options = leafletOptions(pane = "left")) %>%
+  addRasterRGB(x = right, 1, 1, 1,
+               quantiles = c(0.02, 0.98), domain = NULL,
+               options = leafletOptions(pane = "right")) %>%
+  
+  # add side-by-side
+  addSidebyside(layerId = "sidecontrols",
+                rightId = "baseid1",
+                leftId  = "baseid2")
+```
+te
+Network analyses can help us quantify the patterns we see on the landscape for a particular population. For example, we can estimate certain network connectivity metrics to understand how wolves and mice organize and move by estimating how dense their network is or whether it's more centralized or dispersed. A couple of interesting metrics that are easy to interpret are *Link density* and *Degree centrality*. The former assesses landscape-level density of links and the latter tells us how connected an individual patch is in the network. Let's take for example the following landscape (@fig-valley).
+
+![Map of the Willamette Valley ecoregion (US) showing landscape features and protected areas](data/valley.png){#fig-valley}
+
+As you may notice, there are some protected areas in the north and south parts of the region. We are now assessing how wolves are connected across protected areas. We can represent the link as in @fig-wolves. It's a pretty sparse network at a glance. Let's put a number to this network to have a better idea of what we are dealing with. First, we estimate the *link density* using @eq-ld, where $L$ is the number of links in the network and $n$ is the total number of suitable nodes (e.g. minimum area nodes). Then, we can get the *degree centrality* using @eq-dc where $l$ is a link for a node (to the nearest neighbor). Ultimately, we get 
+
+$$ Link Density = 0.67, Degree Centrality = 1.3 (mean) $$
+
+What do these numbers mean? Link density can take values $[0, 1]$ where 0 is an isolated patch, and 1 is a fully connected network, so the network is relatively dense. If we could connect patch 1 to 63 we would have a fully connected network. A degree centrality of 1.3 on average means that every suitable node is on average connected to ~1 other suitable node.
+
+![Map of link and nodes for wolves in the Willamette Valley ecoregion (US)](data/wolves.png){#fig-wolves}
+
+$$ Link Density = \frac{L}{(\frac{n}{n-1}) / 2} $$ {#eq-ld}
+
+$$ Degree Centrality = \sum_{i = 1}^{n}l_{i} $$ {#eq-dc}
+
+This all is quite interesting. However we just scraped the surface here. In the next parts we will explore more sophisticated ways to study landscape connectivity. 
 
 
 # Part 2. Landscape Metrics
 
-In Part 1, we will use landscape metrics to explore how patch and landscape configuration relate to connectivity. Once again, we are working with the `landscapemetrics` package to extract configuration metrics at the patch, class, and landscape levels, which can later be used to derive information on structural or functional connectivity.
+In Part 1, we explored a simple way to quantify the connectivity of suitable patches for wolves. Now, we will use landscape metrics to explore how patch and landscape configuration relate to connectivity. Once again, we are working with the `landscapemetrics` package to extract configuration metrics at the patch, class, and landscape levels, which can later be used to derive information on structural or functional connectivity.
 
 Examples of metrics related to connectivity include:
 
@@ -44,19 +113,6 @@ Examples of metrics related to connectivity include:
 This lab works with the 2011 National Landcover Data (NLCD) from Augusta, Georgia (@fig-data). This is a subset of a Landsat-based (30m) land cover dataset that covers all of the conterminous United States. Landcover types are classified into 20 unique types ranging from open-water to agricultural areas, 15 of which are included in our dataset (@tbl-covers). [Here is](https://www.mrlc.gov/data/legends/national-land-cover-database-class-legend-and-description) a detailed description of the national land cover dataset we are using.
 
 ```{r read}
-#| warning: false
-
-library(tidyverse)
-library(terra)
-library(sf)
-library(FedData)
-library(landscapemetrics)
-library(grainscape)
-library(tmap)
-library(ggplot2)
-library(raster)
-library(igraph)
-
 # load example raster data
 data(augusta_nlcd)
 augusta_nlcd <- unwrap(augusta_nlcd)
