@@ -263,7 +263,7 @@ With a resistance surface in hand, the next step is to create the MPG. For simpl
 
 # Generate and visualize MPG
 duckMPG <- MPG(cost = duck_resistance, patch = duck_resistance == 1)
-plot(duckMPG, quick = "mpgPlot")
+plot(duckMPG)
 ```
 
 Following extraction, the MPG is available as an `igraph` object (see `duckMPG@mpg`) and can be analyzed using any of the functions in this package. A quick way to report on the structure of the graph in tabular format is provided by the function `graphdf()` (@tbl-tabular).
@@ -347,7 +347,7 @@ duck_thresh <- ggplot() +
 duck_thresh
 ```
 
-***Question 2: How does changing the threshold value change the result? Should studies on organisms with a larger dispersal distance (e.g., grizzly bears) use lower or higher threshold values?***
+***Question 2: How does changing the threshold value change the result? Should studies on organisms with a larger dispersal distance (e.g., grizzly bears) use lower or higher threshold values? Use 2 bullet points to convey your ideas.***
 
 ## 3.3 Grains of connectivity
 
@@ -410,7 +410,7 @@ owl_landscape_preferences <- cbind(c(42, 43, 41, 52, 71, 90, 95, 81, 82, 21, 22,
                                    c(1, 1, 2, 3, 4, 4, 4, 5, 5, 6, 6, 7, 8, 10, 10))
 ```
 
-***Question 3: Comparing GOC analysis graphs and total core area for both duck and owl, describe how functional (potential) connectivity differs for these two species.***
+***Question 3: Comparing GOC analysis graphs and total core area for both duck and owl, briefly describe how functional (potential) connectivity differs for these two species.***
 
 ***Question 4: Which species (duck vs owl) and what areas would you prioritize for habitat conservation, and why?***
 
