@@ -76,12 +76,16 @@ leaflet(width = 600, height = 600) %>%
                 rightId = "baseid1",
                 leftId  = "baseid2")
 ```
-te
+
 Network analyses can help us quantify the patterns we see on the landscape for a particular population. For example, we can estimate certain network connectivity metrics to understand how wolves and mice organize and move by estimating how dense their network is or whether it's more centralized or dispersed. A couple of interesting metrics that are easy to interpret are *Link density* and *Degree centrality*. The former assesses landscape-level density of links and the latter tells us how connected an individual patch is in the network. Let's take for example the following landscape (@fig-valley).
 
 ![Map of the Willamette Valley ecoregion (US) showing landscape features and protected areas](data/valley.png){#fig-valley}
 
-As you may notice, there are some protected areas in the north and south parts of the region. We are now assessing how wolves are connected across protected areas. We can represent the link as in @fig-wolves. It's a pretty sparse network at a glance. Let's put a number to this network to have a better idea of what we are dealing with. First, we estimate the *link density* using @eq-ld, where $L$ is the number of links in the network and $n$ is the total number of suitable nodes (e.g. minimum area nodes). Then, we can get the *degree centrality* using @eq-dc where $l$ is a link for a node (to the nearest neighbor). Ultimately, we get 
+As you may notice, there are some protected areas in the north and south parts of the region. We are now assessing how wolves are connected across protected areas. We can represent the link as in @fig-wolves. It's a pretty sparse network at a glance. Let's put a number to this network to have a better idea of what we are dealing with. First, we estimate the *link density* using @eq-ld, where $L$ is the number of links in the network and $n$ is the total number of suitable nodes (e.g. minimum area nodes). Then, we can get the *degree centrality* using @eq-dc where $l$ is a link for a node (to the nearest neighbor).
+
+$$ Link Density = \frac{L}{(\frac{n}{n-1}) / 2} $$ {#eq-ld}
+
+$$ Degree Centrality = \sum_{i = 1}^{n}l_{i} $$ {#eq-dc}
 
 $$ Link Density = 0.67, Degree Centrality = 1.3 (mean) $$
 
@@ -89,9 +93,7 @@ What do these numbers mean? Link density can take values $[0, 1]$ where 0 is an 
 
 ![Map of link and nodes for wolves in the Willamette Valley ecoregion (US)](data/wolves.png){#fig-wolves}
 
-$$ Link Density = \frac{L}{(\frac{n}{n-1}) / 2} $$ {#eq-ld}
 
-$$ Degree Centrality = \sum_{i = 1}^{n}l_{i} $$ {#eq-dc}
 
 This all is quite interesting. However we just scraped the surface here. In the next parts we will explore more sophisticated ways to study landscape connectivity. 
 
@@ -268,7 +270,7 @@ plot(duckMPG)
 
 Following extraction, the MPG is available as an `igraph` object (see `duckMPG@mpg`) and can be analyzed using any of the functions in this package. A quick way to report on the structure of the graph in tabular format is provided by the function `graphdf()` (@tbl-tabular).
 
-The output shows the structure of the nodes (vertices) and their attributes under the list element v as well as the structure of the graph in the form of an link list (i.e. pair of nodes `e1` and `e2` that are connected) and associated link (edge) attributes under the list element `e`.
+The output shows the structure of the nodes (vertices) and their attributes under the list element `v` as well as the structure of the graph in the form of an link list (i.e. pair of nodes `e1` and `e2` that are connected) and associated link (edge) attributes under the list element `e`.
 
 ```{r table}
 #| tbl-cap: "Tabular view of the MPG output."
